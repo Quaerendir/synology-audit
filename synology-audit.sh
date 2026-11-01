@@ -8,7 +8,7 @@
 #
 # Exit codes: 0 OK, 1 REVIEW, 2 VULNERABLE, 3 INDICATORS, 4 UNKNOWN.
 
-VERSION="1.0.1"
+VERSION="1.0.2"
 ADVISORY_SNAPSHOT="2026-11-01"
 
 # Pin PATH (same value DSM uses for cron) so a poisoned PATH cannot swap the
@@ -214,14 +214,28 @@ check_version() {
 
 # ------------------------------------------------------- package inventory
 PKGLIST="$WORK/pkgs"
+DEPLIST="$WORK/deps"
 : > "$PKGLIST"
+: > "$DEPLIST"
 collect_packages() {
   for info in "$R"/var/packages/*/INFO; do
     [ -r "$info" ] || continue
     pid=$(basename "$(dirname "$info")")
     pver=$(grep '^version=' "$info" 2>/dev/null | head -n 1 | cut -d= -f2- | tr -d '"')
     printf '%s %s\n' "$pid" "$pver" >> "$PKGLIST"
+    # install_dep_packages="Python2>=2.7:WebStation": colon-separated, optional version operator
+    pdeps=$(grep '^install_dep_packages=' "$info" 2>/dev/null | head -n 1 | cut -d= -f2- | tr -d '"\r')
+    if [ -n "$pdeps" ]; then
+      printf '%s\n' "$pdeps" | tr ':' '\n' | sed 's/[<>=].*//' | while IFS= read -r dep; do
+        if [ -n "$dep" ]; then printf '%s %s\n' "$pid" "$dep" >> "$DEPLIST"; fi
+      done
+    fi
   done
+}
+
+# dependents ID: installed packages that declare ID as a dependency, comma-separated
+dependents() {
+  awk -v d="$1" 'tolower($2) == tolower(d) { printf "%s%s", sep, $1; sep = ", " }' "$DEPLIST"
 }
 
 pkg_version() { awk -v id="$1" 'tolower($1) == tolower(id) { print $2; exit }' "$PKGLIST"; }
@@ -316,7 +330,12 @@ check_packages() {
   fi
 
   if pkg_present Python2; then
-    add WARN EOL-PKG "Python2 $(pkg_version Python2) is end of life; remove it if nothing needs it"
+    py2users=$(dependents Python2)
+    if [ -n "$py2users" ]; then
+      add WARN EOL-PKG "Python2 $(pkg_version Python2) is end of life and Package Center will not remove it while $py2users depend(s) on it; uninstall that first, or keep it updated and off the Internet"
+    else
+      add WARN EOL-PKG "Python2 $(pkg_version Python2) is end of life and no installed package depends on it; remove it"
+    fi
   fi
 }
 

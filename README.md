@@ -4,13 +4,13 @@
 ![Platform](https://img.shields.io/badge/Synology-DSM%207%20%7C%20DSM%206.2%20%7C%20SRM-blue?style=flat-square)
 ![Mode](https://img.shields.io/badge/mode-read--only-success?style=flat-square)
 ![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)
-![Version](https://img.shields.io/badge/version-1.0.1-informational?style=flat-square)
+![Version](https://img.shields.io/badge/version-1.0.2-informational?style=flat-square)
 [![CI](https://github.com/Quaerendir/synology-audit/actions/workflows/shellcheck.yml/badge.svg)](https://github.com/Quaerendir/synology-audit/actions/workflows/shellcheck.yml)
 
 Read-only security audit for **Synology DSM and SRM** devices. One POSIX `sh` script that runs on the NAS or router itself (or over SSH), checks the installed system against the current Synology advisories, and looks for signs of compromise and risky exposure. It changes nothing and contacts no one.
 
 ```
-synology-audit 1.0.1  (advisory data: 2026-11-01)
+synology-audit 1.0.2  (advisory data: 2026-11-01)
 Device : DS1522+
 System : DSM 7.2.2-72806-4
 Verdict: VULNERABLE
@@ -92,7 +92,7 @@ Add options after the script name (`sudo sh /tmp/synology-audit.sh --json`). If 
 | SMB / NFS / FTP / Telnet | `SMB1`, `NFS`, `FTP`, `TELNET`, `LISTENING` | SMB1 allowed, NFS/rpcbind, plain-text services, every non-loopback listening port |
 | Accounts | `ACCT-ADMIN`, `ACCT-GUEST` | Built-in `admin` and `guest` enabled (needs root) |
 | Updates / firewall | `AUTOUPDATE`, `DSM-FIREWALL` | Auto Update task enabled, DSM firewall on |
-| Packages | `PACKAGES`, `EOL-PKG`, `QUICKCONNECT` | Inventory, Python2, QuickConnect relay |
+| Packages | `PACKAGES`, `EOL-PKG`, `QUICKCONNECT` | Inventory, Python2 (with the packages that depend on it), QuickConnect relay |
 | Router exposure | `FW-ALLOWLIST`, `FW-WHITELIST`, `FW-DEFAULT`, `UPNP`, `UPNP-MAPPINGS`, `FORWARDS` | Ports allowed ahead of the geo-block, addresses allowed on every port, UPnP/NAT-PMP running, UPnP mappings and manual port forwards (root) |
 | Indicators | `IOC-RANSOM`, `IOC-WEBSHELL`, `IOC-UPLOADS`, `IOC-SCHEDULE`, `IOC-PROCESS` | Ransomware-style file names, web-shell patterns, PHP in `uploads/`, download-and-run or reverse-shell commands in cron/Task Scheduler, miner processes |
 
@@ -106,7 +106,7 @@ Add options after the script name (`sudo sh /tmp/synology-audit.sh --json`). If 
 ## Tests
 
 ```sh
-bash tests/run_tests.sh      # 148 checks, each against a fake DSM/SRM tree
+bash tests/run_tests.sh      # 156 checks, each against a fake DSM/SRM tree
 bash tests/make_examples.sh  # regenerate examples/ from the fixtures
 ```
 

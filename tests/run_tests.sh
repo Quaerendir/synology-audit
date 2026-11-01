@@ -147,6 +147,26 @@ good_dsm php74_dsm62 6.2.4 25556 8; add_pkg PHP7.4 7.4.33-0010; run
 expect_has 'OK \] PHP2SHELL: PHP7.4 7.4.33-0010'
 good_dsm python2_pkg; add_pkg Python2 2.7.18-1004; run
 expect_has 'WARN\] EOL-PKG: Python2'
+expect_has 'no installed package depends on it; remove it'
+# Package Center blocks removing Python2 while a package depends on it
+dep_pkg() { # dep_pkg ID VERSION DEPS
+  mkdir -p "$D/var/packages/$1"
+  printf 'package="%s"\nversion="%s"\ninstall_dep_packages="%s"\n' "$1" "$2" "$3" > "$D/var/packages/$1/INFO"
+}
+good_dsm python2_needed; add_pkg Python2 2.7.18-1004; dep_pkg DownloadStation 4.1.2-5012 Python2; run
+expect_rc 1
+expect_has 'EOL-PKG: Python2 .* will not remove it while DownloadStation depend\(s\) on it'
+expect_not 'no installed package depends on it'
+good_dsm python2_needed_two; add_pkg Python2 2.7.18-1004
+dep_pkg DownloadStation 4.1.2-5012 Python2; dep_pkg OldTool 1.0.0-1 'WebStation>=3.0:python2'; run
+expect_has 'while (DownloadStation, OldTool|OldTool, DownloadStation) depend'
+good_dsm python2_dep_operator; add_pkg Python2 2.7.18-1004; dep_pkg Tool 1.0-1 'Python2>=2.7.18'; run
+expect_has 'while Tool depend'
+good_dsm python2_other_dep; add_pkg Python2 2.7.18-1004; dep_pkg Tool 1.0-1 'Python3.9'; run
+expect_has 'no installed package depends on it'
+good_dsm python2_dep_crlf; add_pkg Python2 2.7.18-1004
+mkdir -p "$D/var/packages/CrTool"; printf 'version="1.0-1"\r\ninstall_dep_packages="Python2"\r\n' > "$D/var/packages/CrTool/INFO"; run
+expect_has 'while CrTool depend'
 good_dsm no_php; run
 expect_has 'OK \] PHP2SHELL: no PHP runtime'
 

@@ -2,6 +2,14 @@
 
 All notable changes to `synology-audit` are documented here.
 
+## [1.0.2] — 2026-11-01
+
+### Changed
+- The Python2 end-of-life warning now says **what depends on it**. Package Center refuses to remove Python2 while a package lists it in `install_dep_packages` (on a DS1522+ that is Download Station 4.1.2), so "remove it if nothing needs it" was not actionable. The finding reads the dependency lists of all installed packages (colon-separated, version operators like `Python2>=2.7` and CRLF line endings handled) and names the dependents, or says that nothing depends on it and it can go.
+
+### Added
+- 156 regression checks (new: dependents named, two dependents, version operator, lower-case ID, other dependency, CRLF `INFO`); the new logic is mutation-tested.
+
 ## [1.0.1] — 2026-11-01
 
 ### Fixed

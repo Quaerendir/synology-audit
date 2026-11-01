@@ -1,9 +1,9 @@
-synology-audit 1.0.1  (advisory data: 2026-11-01)
+synology-audit 1.0.2  (advisory data: 2026-11-01)
 Device : DS1522+
 System : DSM 7.4.1-90080-1
 Verdict: REVIEW
 
-[WARN] EOL-PKG: Python2 2.7.18-1004 is end of life; remove it if nothing needs it
+[WARN] EOL-PKG: Python2 2.7.18-1004 is end of life and no installed package depends on it; remove it
 [WARN] SSH: SSH is enabled (port 8522). Turn it off when you are not using it; it is reachable from the Internet unless the firewall or NAT blocks it
 [WARN] SMB1: SMB1 is allowed (min protocol=NT1): raise the minimum to SMB2 or higher (Control Panel > File Services > SMB > Advanced) after checking old scanners and printers
 [INFO] PACKAGES: 3 packages installed: FileStation, Python2, QuickConnect
