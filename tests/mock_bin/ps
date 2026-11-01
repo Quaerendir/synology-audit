@@ -1,0 +1,5 @@
+#!/bin/sh
+# Mock ps: prints the per-case process list. Fails when the case has none,
+# like a missing binary.
+[ -r "$SYNOLOGY_AUDIT_TEST_ROOT/_ps" ] || exit 1
+cat "$SYNOLOGY_AUDIT_TEST_ROOT/_ps"

@@ -1,0 +1,20 @@
+synology-audit 1.0.0  (advisory data: 2026-11-01)
+Device : DS1522+
+System : DSM 7.2.2-72806-4
+Verdict: VULNERABLE
+
+[CRIT] VERSION: DSM 7.2.2-72806-4 is below the SA-26:13 fixed build 7.2.2-72806-9: CVE-2026-13639 and CVE-2026-13684 (CVSS 9.8, unauthenticated file read/write); update DSM now
+[CRIT] PHP2SHELL: PHP8.2 8.2.34-0100 is below the SA-26:14 fix 8.2.35-0171 (CVE-2026-109618/109619, CVSS 9.8, remote code execution) and PHP-based packages are installed (WebStation WordPress); update it in Package Center
+[INFO] PACKAGES: 3 packages installed: PHP8.2, WebStation, WordPress
+[INFO] ACCOUNTS: administrators group: alice
+[INFO] ACCOUNTS: run as root to check whether the admin and guest accounts are disabled
+[ OK ] SSH: SSH is not running
+[ OK ] SMB1: SMB minimum protocol is SMB2
+[ OK ] AUTOUPDATE: the DSM Auto Update task is enabled
+[ OK ] DSM-FIREWALL: the DSM firewall is enabled
+[ OK ] SCHEDULE: no suspicious command in cron or Task Scheduler
+[ OK ] PROCESSES: no miner or temp-directory process found
+[ OK ] IOC-RANSOM: no ransomware-style file or ransom-note name on the volumes (searched 4 levels deep)
+[ OK ] IOC-WEB: no web root found (no Web Station content)
+
+2 critical, 0 warning(s), 3 info, 8 ok

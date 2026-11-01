@@ -1,0 +1,4 @@
+#!/bin/sh
+# Mock iptables: the script only ever calls "iptables -t nat -S".
+[ -r "$SYNOLOGY_AUDIT_TEST_ROOT/_nat" ] || exit 1
+cat "$SYNOLOGY_AUDIT_TEST_ROOT/_nat"

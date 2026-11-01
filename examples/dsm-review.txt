@@ -1,0 +1,23 @@
+synology-audit 1.0.0  (advisory data: 2026-11-01)
+Device : DS1522+
+System : DSM 7.4.1-90080-1
+Verdict: REVIEW
+
+[WARN] EOL-PKG: Python2 2.7.18-1004 is end of life; remove it if nothing needs it
+[WARN] SSH: SSH is enabled (port 8522). Turn it off when you are not using it; it is reachable from the Internet unless the firewall or NAT blocks it
+[WARN] SMB1: SMB1 is allowed (min protocol=NT1): raise the minimum to SMB2 or higher (Control Panel > File Services > SMB > Advanced) after checking old scanners and printers
+[INFO] PACKAGES: 3 packages installed: FileStation, Python2, QuickConnect
+[INFO] SSH-CONFIG: sshd_config is not readable (run as root to check PermitRootLogin and PasswordAuthentication)
+[INFO] ACCOUNTS: administrators group: alice
+[INFO] ACCOUNTS: run as root to check whether the admin and guest accounts are disabled
+[INFO] QUICKCONNECT: QuickConnect/relay is active: the sign-in page is reachable through Synology's relay; keep 2FA on every account
+[ OK ] VERSION: DSM 7.4.1-90080-1 is at or above the SA-26:13 fixed build 7.4-90075 (CVE-2026-13639, CVE-2026-13684)
+[ OK ] PHP2SHELL: no PHP runtime, Calendar or Mail Station package installed: SA-26:14 (PHP2Shell) does not apply
+[ OK ] AUTOUPDATE: the DSM Auto Update task is enabled
+[ OK ] DSM-FIREWALL: the DSM firewall is enabled
+[ OK ] SCHEDULE: no suspicious command in cron or Task Scheduler
+[ OK ] PROCESSES: no miner or temp-directory process found
+[ OK ] IOC-RANSOM: no ransomware-style file or ransom-note name on the volumes (searched 4 levels deep)
+[ OK ] IOC-WEB: no web root found (no Web Station content)
+
+0 critical, 3 warning(s), 5 info, 8 ok
