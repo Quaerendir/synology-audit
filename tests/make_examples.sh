@@ -24,8 +24,8 @@ base() { # base NAME PV BUILD FIX
   printf 'administrators:x:101:alice\n' > "$D/etc/group"
 }
 pkg() { mkdir -p "$D/var/packages/$1"; printf 'version="%s"\n' "$2" > "$D/var/packages/$1/INFO"; }
-audit() { # audit NAME [args] -> examples/NAME.txt|json
-  local name="$1"; shift
+audit() { # audit NAME [args]; output goes to stdout
+  shift
   SYNOLOGY_AUDIT_TEST_ROOT="$D" SYNOLOGY_AUDIT_TEST_PATH="$MOCK_BIN" sh "$SCRIPT" "$@" || true
 }
 
