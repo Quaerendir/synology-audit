@@ -1,4 +1,4 @@
-synology-audit 1.0.0  (advisory data: 2026-11-01)
+synology-audit 1.0.1  (advisory data: 2026-11-01)
 Device : DS1522+
 System : DSM 7.2.2-72806-4
 Verdict: VULNERABLE

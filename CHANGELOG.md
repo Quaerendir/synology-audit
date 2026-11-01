@@ -2,6 +2,15 @@
 
 All notable changes to `synology-audit` are documented here.
 
+## [1.0.1] — 2026-11-01
+
+### Fixed
+- **Disabled accounts were reported as enabled.** DSM keeps the password hash of a disabled account and marks it expired instead (`/etc/shadow` field 8, observed value `1`). The `admin`/`guest` check treated any `$` hash as enabled, so a disabled `guest` raised `ACCT-GUEST`. An account whose expiry day is today or earlier is now disabled. Found on a real DS1522+ run as root.
+- A key file saved with CRLF line endings (for example one uploaded from Windows with `type file | ssh`) made the `SSH-KEYS` line garbled and counted the blank `\r` line as a key. Carriage returns are stripped and only real key lines are counted.
+
+### Changed
+- 148 regression checks (new: expired and future-expiry accounts, CRLF key files); the new logic is mutation-tested.
+
 ## [1.0.0] — 2026-11-01
 
 ### Added

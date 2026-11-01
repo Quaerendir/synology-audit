@@ -226,6 +226,28 @@ expect_has 'WARN\] ACCT-ADMIN'; expect_not 'ACCT-GUEST'
 good_dsm accounts_disabled
 printf 'admin:*:19000:0:99999:7:::\nguest:!:19000:0:99999:7:::\n' > "$D/etc/shadow"; run
 expect_not 'ACCT-ADMIN'
+# DSM disables an account by expiring it (shadow field 8), the hash stays
+good_dsm guest_expired
+printf 'admin:$6$abc$def:20161:0:99999:7:::\nguest:$6$abc$def:20161:0:99999:7::1:\n' > "$D/etc/shadow"; run
+expect_has 'WARN\] ACCT-ADMIN'; expect_not 'ACCT-GUEST'
+good_dsm guest_enabled_hash
+printf 'guest:$6$abc$def:20161:0:99999:7:::\n' > "$D/etc/shadow"; run
+expect_has 'WARN\] ACCT-GUEST'
+good_dsm guest_expiry_in_future
+printf 'guest:$6$abc$def:20161:0:99999:7::999999:\n' > "$D/etc/shadow"; run
+expect_has 'WARN\] ACCT-GUEST'
+good_dsm guest_expiry_past_big
+printf 'guest:$6$abc$def:20161:0:99999:7::19000:\n' > "$D/etc/shadow"; run
+expect_not 'ACCT-GUEST'
+good_dsm admin_expired
+printf 'admin:$6$abc$def:20161:0:99999:7::1:\n' > "$D/etc/shadow"; run
+expect_not 'ACCT-ADMIN'
+# a key file saved with CRLF endings: one key, no stray carriage return
+good_dsm crlf_keys
+mkdir -p "$D/var/services/homes/carol/.ssh"
+printf '%s\r\n\r\n' "$(cat "$TMP/testkey.pub")" > "$D/var/services/homes/carol/.ssh/authorized_keys"; run
+expect_has 'authorized_keys for carol: 1 key\(s\)'
+if printf '%s' "$OUT" | grep -q "$(printf '\r')"; then fail "output contains a carriage return"; else pass; fi
 good_dsm quickconnect; add_pkg QuickConnect 1.0.10-0187; run
 expect_has 'INFO\] QUICKCONNECT'
 

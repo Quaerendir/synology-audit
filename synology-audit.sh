@@ -8,7 +8,7 @@
 #
 # Exit codes: 0 OK, 1 REVIEW, 2 VULNERABLE, 3 INDICATORS, 4 UNKNOWN.
 
-VERSION="1.0.0"
+VERSION="1.0.1"
 ADVISORY_SNAPSHOT="2026-11-01"
 
 # Pin PATH (same value DSM uses for cron) so a poisoned PATH cannot swap the
@@ -352,10 +352,11 @@ check_ssh() {
       */root/.ssh/*) owner=root ;;
       *) owner=$(basename "$(dirname "$(dirname "$ak")")") ;;
     esac
-    nkeys=$(grep -c '^[^#]' "$ak" 2>/dev/null)
+    # count key lines only (a file saved with CRLF endings has blank "\r" lines)
+    nkeys=$(grep -Ec '(ssh-(rsa|ed25519|dss)|ecdsa-sha2-|sk-)' "$ak" 2>/dev/null)
     fps=""
     if has_cmd ssh-keygen; then
-      fps=$(ssh-keygen -lf "$ak" 2>/dev/null | awk '{ fp = $2; $1 = ""; $2 = ""; sub(/ \([A-Za-z0-9-]+\)$/, ""); sub(/^ +/, ""); printf "%s%s %s", sep, fp, $0; sep = "; " }')
+      fps=$(ssh-keygen -lf "$ak" 2>/dev/null | tr -d '\r' | awk '{ fp = $2; $1 = ""; $2 = ""; sub(/ \([A-Za-z0-9-]+\)$/, ""); sub(/^ +/, ""); printf "%s%s %s", sep, fp, $0; sep = "; " }')
     fi
     add INFO SSH-KEYS "authorized_keys for $owner: ${nkeys:-0} key(s)${fps:+ ($fps)}"
   done
@@ -398,15 +399,26 @@ check_accounts() {
   fi
   shadow="$R/etc/shadow"
   if [ -r "$shadow" ]; then
+    # DSM keeps the hash of a disabled account and marks it expired instead
+    # (shadow field 8 = day number since 1970, observed value 1).
+    today=$(( $(date +%s 2>/dev/null || echo 0) / 86400 ))
     for acct in admin guest; do
-      st=$(awk -F: -v u="$acct" '$1 == u { print $2 }' "$shadow")
-      case "$st" in
-        '$'*)
-          case "$acct" in
-            admin) add WARN ACCT-ADMIN "the built-in admin account is enabled; use a named administrator and disable admin" ;;
-            guest) add WARN ACCT-GUEST "the guest account is enabled; disable it" ;;
-          esac ;;
+      rec=$(awk -F: -v u="$acct" '$1 == u { print $2 ":" $8 }' "$shadow")
+      [ -n "$rec" ] || continue
+      st=${rec%%:*}
+      ex=${rec#*:}
+      enabled=0
+      case "$st" in '$'*) enabled=1 ;; esac
+      case "$ex" in
+        ''|*[!0-9]*) ;;
+        *) if [ "$ex" -le "$today" ]; then enabled=0; fi ;;
       esac
+      if [ "$enabled" -eq 1 ]; then
+        case "$acct" in
+          admin) add WARN ACCT-ADMIN "the built-in admin account is enabled; use a named administrator and disable admin" ;;
+          guest) add WARN ACCT-GUEST "the guest account is enabled; disable it" ;;
+        esac
+      fi
     done
   elif [ -r "$grp" ]; then
     add INFO ACCOUNTS "run as root to check whether the admin and guest accounts are disabled"
