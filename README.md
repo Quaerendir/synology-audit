@@ -51,6 +51,17 @@ ssh admin@nas 'sh -s -- --json' < synology-audit.sh
 
 Or copy it over and run it. **Run it as root for the full picture**: without root it cannot list UPnP mappings and port forwards, read `/etc/shadow`, or read `sshd_config` on DSM. Anything it could not check is reported as `INFO`, never silently skipped.
 
+### Running as root
+
+`ssh admin@nas 'sudo sh -s' < synology-audit.sh` does **not** work: the script occupies stdin, so `sudo` has no way to read its password ("a terminal is required"). Copy the script over and run it with a terminal instead. You type the `sudo` password yourself.
+
+```sh
+ssh -p PORT admin@nas "cat > /tmp/synology-audit.sh" < synology-audit.sh
+ssh -t -p PORT admin@nas "sudo sh /tmp/synology-audit.sh; rm -f /tmp/synology-audit.sh"
+```
+
+Add options after the script name (`sudo sh /tmp/synology-audit.sh --json`). If you are already in a root shell on the device, just run `sh synology-audit.sh`. Do not pipe a password into `sudo -S`: it ends up in your shell history and process list.
+
 ```
 --json            machine-readable output
 --quiet, -q       one line: VERDICT, system, counts
