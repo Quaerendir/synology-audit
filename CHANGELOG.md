@@ -2,7 +2,7 @@
 
 All notable changes to `synology-audit` are documented here.
 
-## [Unreleased]
+## [1.1.0] — 2026-11-16
 
 ### Fixed — verdicts (review before relying on exit codes)
 - A run stopped by a signal (Ctrl-C during the file sweep, `kill`, a dropped SSH session) no longer ends with `Verdict: OK` and exit 0. The signal trap removed the temp directory but did not stop the script, which then counted zero findings. The run now stops with no verdict: exit 130 (INT), 143 (TERM) or 129 (HUP).

@@ -4,13 +4,13 @@
 ![Platform](https://img.shields.io/badge/Synology-DSM%207%20%7C%20DSM%206.2%20%7C%20SRM-blue?style=flat-square)
 ![Mode](https://img.shields.io/badge/mode-read--only-success?style=flat-square)
 ![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)
-![Version](https://img.shields.io/badge/version-1.0.2-informational?style=flat-square)
+![Version](https://img.shields.io/badge/version-1.1.0-informational?style=flat-square)
 [![CI](https://github.com/Quaerendir/synology-audit/actions/workflows/shellcheck.yml/badge.svg)](https://github.com/Quaerendir/synology-audit/actions/workflows/shellcheck.yml)
 
 Read-only security audit for **Synology DSM and SRM** devices. One POSIX `sh` script that runs on the NAS or router itself (or over SSH), checks the installed system against the current Synology advisories, and looks for signs of compromise and risky exposure. It changes nothing and contacts no one.
 
 ```
-synology-audit 1.0.2  (advisory data: 2026-11-01)
+synology-audit 1.1.0  (advisory data: 2026-11-01)
 Device : DS1522+
 System : DSM 7.2.2-72806-4
 Verdict: VULNERABLE

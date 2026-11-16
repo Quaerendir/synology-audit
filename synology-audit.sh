@@ -8,7 +8,7 @@
 #
 # Exit codes: 0 OK, 1 REVIEW, 2 VULNERABLE, 3 INDICATORS, 4 UNKNOWN.
 
-VERSION="1.0.2"
+VERSION="1.1.0"
 ADVISORY_SNAPSHOT="2026-11-01"
 
 # Pin PATH (same value DSM uses for cron) so a poisoned PATH cannot swap the
