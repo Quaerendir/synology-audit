@@ -374,6 +374,33 @@ expect_has 'SSH is enabled'; expect_has 'WARN\] TELNET'
 good_dsm mock_absent; run
 expect_has 'OK \] SSH: SSH is not running'; expect_not 'TELNET'
 
+# ------------------------------------------------- searches cut short
+# A search that hits its time limit has not cleared the volume: REVIEW, not
+# OK. The mock timeout accepts the "timeout 5 true" probe and then reports
+# 124, with or without running the command.
+good_dsm sweep_timeout; mkdir -p "$D/volume1/web" "$D/_to"
+printf '#!/bin/sh\n[ "$2" = true ] && exit 0\nexit 124\n' > "$D/_to/timeout"; chmod +x "$D/_to/timeout"
+OUT=$(SYNOLOGY_AUDIT_TEST_ROOT="$D" SYNOLOGY_AUDIT_TEST_PATH="$D/_to:$MOCK_BIN" "$SH" "$SCRIPT" 2>&1); RC=$?
+expect_rc 1; expect_has 'WARN\] IOC-RANSOM: .*stopped at its 90 s limit on: /volume1\.'; expect_not 'OK \] IOC-RANSOM'
+expect_has 'WARN\] IOC-WEBSHELL: .*stopped at its 60 s limit'; expect_not 'OK \] IOC-WEBSHELL'; expect_not "$TMP"
+good_dsm sweep_timeout_with_hit; mkdir -p "$D/volume1/web" "$D/_to"; : > "$D/volume1/a.c3rb3r"
+printf '<?php eval(base64_decode($_POST["x"]));\n' > "$D/volume1/web/s.php"
+printf '#!/bin/sh\n[ "$2" = true ] && exit 0\nshift\n"$@"\nexit 124\n' > "$D/_to/timeout"; chmod +x "$D/_to/timeout"
+OUT=$(SYNOLOGY_AUDIT_TEST_ROOT="$D" SYNOLOGY_AUDIT_TEST_PATH="$D/_to:$MOCK_BIN" "$SH" "$SCRIPT" 2>&1); RC=$?
+expect_rc 3; expect_has 'CRIT\] IOC-RANSOM'; expect_has 'CRIT\] IOC-WEBSHELL'
+# A timeout that does not take "SECONDS CMD" (BusyBox before 1.30) must not
+# replace the search: the search runs without a limit instead.
+good_dsm timeout_unusable; mkdir -p "$D/volume1" "$D/_to"; : > "$D/volume1/a.c3rb3r"
+printf '#!/bin/sh\necho "timeout: bad usage" >&2\nexit 1\n' > "$D/_to/timeout"; chmod +x "$D/_to/timeout"
+OUT=$(SYNOLOGY_AUDIT_TEST_ROOT="$D" SYNOLOGY_AUDIT_TEST_PATH="$D/_to:$MOCK_BIN" "$SH" "$SCRIPT" 2>&1); RC=$?
+expect_rc 3; expect_has 'CRIT\] IOC-RANSOM'
+
+# ss -tln as the fallback when netstat is missing: rows start with LISTEN.
+good_dsm ss_fallback
+printf 'State Recv-Q Send-Q Local Address:Port Peer Address:Port\nLISTEN 0 128 0.0.0.0:23 0.0.0.0:*\nLISTEN 0 128 127.0.0.1:5432 0.0.0.0:*\nLISTEN 0 128 [::]:21 [::]:*\nLISTEN 0 128 127.0.0.53:53 0.0.0.0:*\n' > "$D/_ss"; run
+expect_has 'WARN\] TELNET'; expect_has 'WARN\] FTP'
+expect_has 'listening on non-loopback addresses: 21 23$'
+
 # ------------------------------------------------------- interrupted run
 # A signal during the file sweep must end the run with no verdict. The mock
 # find marks that the sweep has started, then stalls. (SIGINT cannot be sent

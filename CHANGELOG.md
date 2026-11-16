@@ -8,6 +8,10 @@ All notable changes to `synology-audit` are documented here.
 - A run stopped by a signal (Ctrl-C during the file sweep, `kill`, a dropped SSH session) no longer ends with `Verdict: OK` and exit 0. The signal trap removed the temp directory but did not stop the script, which then counted zero findings. The run now stops with no verdict: exit 130 (INT), 143 (TERM) or 129 (HUP).
 - If the findings file is missing or empty when the report is built (temp directory removed, disk full), the result is UNKNOWN with exit 4 instead of OK.
 - A cron or Task Scheduler line with `rsync -e ssh ...` (or `rsync -avhe ...`) was reported as a reverse shell, giving the verdict INDICATORS: the netcat pattern matched the "nc -e" inside it. netcat (`nc`, `ncat`, `netcat`) must now start a word.
+- A file sweep that hit its time limit was reported as clean. It is now a WARN (`IOC-RANSOM` / `IOC-WEBSHELL`: "stopped at its ... limit, the rest is unchecked"), so the verdict is REVIEW instead of OK; hits found before the limit are still CRIT.
+- `timeout` is used only if it accepts `timeout SECONDS CMD`; with BusyBox before 1.30 every search failed instead of running, and read as clean.
+- With `ss -tln` as the fallback for a missing `netstat`, no listening port was recognised (Telnet/FTP/NFS findings were lost). All of 127.0.0.0/8 counts as loopback.
+- The test hooks stay off when `id` gives no answer.
 
 ## [1.0.2] — 2026-11-01
 

@@ -18,7 +18,9 @@ export PATH
 
 # Test hooks. They are ignored for root, so they cannot redirect a real audit.
 R=""
-if [ "$(id -u 2>/dev/null)" != "0" ]; then
+# No answer from id counts as root, so the hooks stay off.
+AUDIT_UID=$(id -u 2>/dev/null) || AUDIT_UID=0
+if [ "${AUDIT_UID:-0}" != "0" ]; then
   if [ -n "${SYNOLOGY_AUDIT_TEST_ROOT:-}" ]; then R="$SYNOLOGY_AUDIT_TEST_ROOT"; fi
   if [ -n "${SYNOLOGY_AUDIT_TEST_PATH:-}" ]; then PATH="$SYNOLOGY_AUDIT_TEST_PATH:$PATH"; fi
 fi
@@ -164,10 +166,12 @@ identify() {
 # --------------------------------------------------------------- snapshots
 PS_OUT=$( (ps -eo user,pid,args 2>/dev/null || ps w 2>/dev/null || ps 2>/dev/null) )
 NS_OUT=$( (netstat -tln 2>/dev/null || ss -tln 2>/dev/null) )
-LISTEN_EXT=$(printf '%s\n' "$NS_OUT" | awk '$1 ~ /^tcp/ {
+# netstat rows start with tcp/tcp6, ss -tln rows with LISTEN; in both the
+# local address is the fourth field.
+LISTEN_EXT=$(printf '%s\n' "$NS_OUT" | awk '$1 ~ /^tcp/ || $1 == "LISTEN" {
   a = $4; n = split(a, p, ":"); port = p[n]
   addr = substr(a, 1, length(a) - length(port) - 1)
-  if (addr == "127.0.0.1" || addr == "::1" || addr == "[::1]") next
+  if (addr ~ /^127\./ || addr == "::1" || addr == "[::1]") next
   print port }' | sort -un | tr '\n' ' ')
 LISTEN_EXT=${LISTEN_EXT% }
 
@@ -511,21 +515,43 @@ web_roots() {
   done
 }
 
+# timeout is used only if it accepts "timeout SECONDS CMD" (BusyBox before
+# 1.30 wants -t SECONDS and would fail every search instead of running it).
+TIMEOUT_OK=0
+if has_cmd timeout && timeout 5 true >/dev/null 2>&1; then TIMEOUT_OK=1; fi
 run_timeout() { # run_timeout SECONDS CMD...
   secs="$1"; shift
-  if has_cmd timeout; then timeout "$secs" "$@"; else "$@"; fi
+  if [ "$TIMEOUT_OK" -eq 1 ]; then timeout "$secs" "$@"; else "$@"; fi
+}
+
+# timed SECONDS CMD...: run_timeout that records the exit status, so that
+# cut_short can tell a search stopped at its limit (124, or killed: 137/143)
+# from one that finished. A search that was cut short has cleared nothing.
+timed() {
+  run_timeout "$@"
+  echo "$?" > "$WORK/st"
+}
+cut_short() {
+  case "$(cat "$WORK/st" 2>/dev/null)" in
+    124|137|143) return 0 ;;
+  esac
+  return 1
 }
 
 check_ioc() {
   hits=""
+  cutvols=""
   for vol in "$R"/volume*; do
     [ -d "$vol" ] || continue
-    found=$(run_timeout 90 find "$vol" -maxdepth 4 -type f 2>/dev/null | grep -Ei "$RANSOM_RE" | head -n 10)
+    found=$(timed 90 find "$vol" -maxdepth 4 -type f 2>/dev/null | grep -Ei "$RANSOM_RE" | head -n 10)
+    if cut_short; then cutvols="$cutvols $vol"; fi
     [ -n "$found" ] && hits="$hits
 $found"
   done
   if [ -n "$hits" ]; then
     add CRIT IOC-RANSOM "file names typical of the Cerber/C3RB3R ransomware (heuristic, Synology publishes no IOC list):$(printf '%s' "$hits" | unroot | tr '\n' ' ' | cut -c1-400)"
+  elif [ -n "$cutvols" ]; then
+    add WARN IOC-RANSOM "the search for ransomware-style file names stopped at its 90 s limit on:$(printf '%s' "$cutvols" | unroot). Nothing was found in the part that was searched; the rest is unchecked"
   else
     add OK IOC-RANSOM "no ransomware-style file or ransom-note name on the volumes (searched 4 levels deep)"
   fi
@@ -538,19 +564,25 @@ $found"
   shells=""
   recent=0
   upl=""
+  webcut=0
   for wr in $roots; do
-    s=$(run_timeout 60 grep -rlE "$WEBSHELL_RE" "$wr" 2>/dev/null | head -n 10)
+    s=$(timed 60 grep -rlE "$WEBSHELL_RE" "$wr" 2>/dev/null | head -n 10)
+    if cut_short; then webcut=1; fi
     [ -n "$s" ] && shells="$shells
 $s"
-    n=$(run_timeout 60 find "$wr" -type f \( -name '*.php' -o -name '*.phtml' -o -name '*.phar' \) -mtime "-$SINCE_DAYS" 2>/dev/null | wc -l | tr -d ' ')
+    n=$(timed 60 find "$wr" -type f \( -name '*.php' -o -name '*.phtml' -o -name '*.phar' \) -mtime "-$SINCE_DAYS" 2>/dev/null | wc -l | tr -d ' ')
+    if cut_short; then webcut=1; fi
     recent=$((recent + ${n:-0}))
-    u=$(run_timeout 60 find "$wr" -type f \( -name '*.php' -o -name '*.phtml' -o -name '*.phar' \) 2>/dev/null |
+    u=$(timed 60 find "$wr" -type f \( -name '*.php' -o -name '*.phtml' -o -name '*.phar' \) 2>/dev/null |
       awk -v root="$wr" 'index($0, root) == 1 { rel = substr($0, length(root) + 1) } tolower(rel) ~ /\/(uploads?|cache|tmp)\// { print }' | head -n 5)
+    if cut_short; then webcut=1; fi
     [ -n "$u" ] && upl="$upl
 $u"
   done
   if [ -n "$shells" ]; then
     add CRIT IOC-WEBSHELL "web-shell patterns in web roots:$(printf '%s' "$shells" | unroot | tr '\n' ' ' | cut -c1-400)"
+  elif [ "$webcut" -eq 1 ]; then
+    add WARN IOC-WEBSHELL "the sweep of the web roots stopped at its 60 s limit. No web-shell pattern was found in the part that was searched; the rest is unchecked"
   else
     add OK IOC-WEBSHELL "no web-shell pattern in the web roots"
   fi
