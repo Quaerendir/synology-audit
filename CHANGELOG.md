@@ -2,6 +2,13 @@
 
 All notable changes to `synology-audit` are documented here.
 
+## [Unreleased]
+
+### Fixed — verdicts (review before relying on exit codes)
+- A run stopped by a signal (Ctrl-C during the file sweep, `kill`, a dropped SSH session) no longer ends with `Verdict: OK` and exit 0. The signal trap removed the temp directory but did not stop the script, which then counted zero findings. The run now stops with no verdict: exit 130 (INT), 143 (TERM) or 129 (HUP).
+- If the findings file is missing or empty when the report is built (temp directory removed, disk full), the result is UNKNOWN with exit 4 instead of OK.
+- A cron or Task Scheduler line with `rsync -e ssh ...` (or `rsync -avhe ...`) was reported as a reverse shell, giving the verdict INDICATORS: the netcat pattern matched the "nc -e" inside it. netcat (`nc`, `ncat`, `netcat`) must now start a word.
+
 ## [1.0.2] — 2026-11-01
 
 ### Changed

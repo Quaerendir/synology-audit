@@ -78,9 +78,9 @@ Add options after the script name (`sudo sh /tmp/synology-audit.sh --json`). If 
 | `REVIEW` | 1 | warnings: hardening gaps, exposure, end-of-life packages |
 | `VULNERABLE` | 2 | a known flaw is unpatched |
 | `INDICATORS` | 3 | signs of compromise (see below) |
-| `UNKNOWN` | 4 | not a Synology DSM/SRM system |
+| `UNKNOWN` | 4 | not a Synology DSM/SRM system, or the findings were lost mid-run |
 
-`INDICATORS` outranks `VULNERABLE`. Option errors exit 64.
+`INDICATORS` outranks `VULNERABLE`. Option errors exit 64. A run stopped by a signal prints no verdict and exits 130 (INT), 143 (TERM) or 129 (HUP).
 
 ## What it checks
 

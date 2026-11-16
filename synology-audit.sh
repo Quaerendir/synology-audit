@@ -72,7 +72,12 @@ WORK=$(mktemp -d 2>/dev/null) || {
   WORK="/tmp/synology-audit.$$"
   (umask 077 && mkdir "$WORK") || { echo "cannot create a temp directory" >&2; exit 70; }
 }
-trap 'rm -rf "$WORK"' EXIT INT TERM
+# A signal has to end the run. A trap that only removes the temp directory
+# lets the script carry on without its findings file and report OK.
+trap 'rm -rf "$WORK"' EXIT
+trap 'echo "synology-audit: interrupted, no verdict" >&2; exit 130' INT
+trap 'echo "synology-audit: terminated, no verdict" >&2; exit 143' TERM
+trap 'exit 129' HUP
 FIND="$WORK/findings"
 : > "$FIND"
 
@@ -467,8 +472,9 @@ check_updates() {
   fi
 }
 
-# Suspicious commands in cron or scheduled tasks.
-SUSPICIOUS_CMD='(curl|wget)[^|]*\|[[:space:]]*(ba|da|a)?sh|base64[[:space:]]+(-d|--decode)|/dev/tcp/|nc[[:space:]]+(-[a-z]*e|-c)|mkfifo|/tmp/[.a-zA-Z0-9_-]+\.(sh|py|pl)|xmrig|minerd|kinsing'
+# Suspicious commands in cron or scheduled tasks. netcat must start a word:
+# without that, "rsync -e ssh" (ends in "nc -e") reads as a reverse shell.
+SUSPICIOUS_CMD='(curl|wget)[^|]*\|[[:space:]]*(ba|da|a)?sh|base64[[:space:]]+(-d|--decode)|/dev/tcp/|(^|[^[:alnum:]_-])(nc|ncat|netcat)[[:space:]]+(-[a-z]*e|-c)|mkfifo|/tmp/[.a-zA-Z0-9_-]+\.(sh|py|pl)|xmrig|minerd|kinsing'
 check_schedule() {
   hits=""
   for f in "$R"/etc/crontab "$R"/var/spool/cron/crontabs/* "$R"/usr/syno/etc/synoschedule.d/*/*.task; do
@@ -633,6 +639,19 @@ check_exposure
 if [ "$NO_IOC" -eq 0 ]; then check_ioc; fi
 
 # ------------------------------------------------------------------ report
+# Every run records at least the version finding. A missing or empty file
+# means the findings were lost (temp directory removed, disk full), and that
+# must never read as "nothing found".
+if [ ! -s "$FIND" ]; then
+  if [ "$QUIET" -eq 1 ]; then
+    echo "UNKNOWN findings were lost, no verdict"
+  elif [ "$JSON" -eq 1 ]; then
+    printf '{"tool":"synology-audit","version":"%s","verdict":"UNKNOWN","exit":4,"findings":[]}\n' "$VERSION"
+  else
+    echo "synology-audit $VERSION: the findings file is missing or empty (temp directory removed or full); no verdict." >&2
+  fi
+  exit 4
+fi
 n_crit=$(grep -c '^CRIT|' "$FIND")
 n_warn=$(grep -c '^WARN|' "$FIND")
 n_info=$(grep -c '^INFO|' "$FIND")
