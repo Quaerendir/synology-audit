@@ -2,7 +2,7 @@
 
 All notable changes to `synology-audit` are documented here.
 
-## [Unreleased]
+## [1.2.0] — 2026-11-18
 
 - ASCII banner in the text report, in the style of the other audits (box, colour
   only on a terminal and without `NO_COLOR`, signature line). `--no-banner` turns it
