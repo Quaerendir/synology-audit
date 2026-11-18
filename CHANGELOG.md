@@ -2,6 +2,17 @@
 
 All notable changes to `synology-audit` are documented here.
 
+## [Unreleased]
+
+- ASCII banner in the text report, in the style of the other audits (box, colour
+  only on a terminal and without `NO_COLOR`, signature line). `--no-banner` turns it
+  off; `--quiet` and `--json` never print it.
+- Fix: `has_cmd` no longer uses `command -v`. Busybox builds without the `command`
+  builtin (seen on SRM 1.3.2) made every optional tool look absent, so `iptables`
+  (UPnP and port forwards), `ssh-keygen` (key fingerprints) and `timeout` were
+  silently skipped. The PATH is searched by hand. Regression test: the report
+  must be identical in a shell where `command` always fails.
+
 ## [1.1.0] — 2026-11-16
 
 ### Fixed — verdicts (review before relying on exit codes)

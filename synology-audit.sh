@@ -32,6 +32,7 @@ Usage: synology-audit.sh [options]
   --json            machine-readable output
   --quiet, -q       one line: VERDICT, system, counts
   --no-ioc          skip the file-system sweep (ransomware / web-shell search)
+  --no-banner       text report without the ASCII banner
   --since DAYS      "recently modified PHP" window for web roots (default 60)
   --web-root DIR    extra web root to sweep (repeatable)
   --version         print the version
@@ -45,6 +46,7 @@ EOF
 JSON=0
 QUIET=0
 NO_IOC=0
+NO_BANNER=0
 SINCE_DAYS=60
 EXTRA_ROOTS=""
 while [ $# -gt 0 ]; do
@@ -52,6 +54,7 @@ while [ $# -gt 0 ]; do
     --json) JSON=1 ;;
     --quiet|-q) QUIET=1 ;;
     --no-ioc) NO_IOC=1 ;;
+    --no-banner) NO_BANNER=1 ;;
     --since)
       if [ $# -lt 2 ]; then echo "--since needs a number of days" >&2; exit 64; fi
       shift; SINCE_DAYS="$1" ;;
@@ -120,7 +123,17 @@ kv() { grep "^$1=" "$VERFILE" 2>/dev/null | head -n 1 | cut -d= -f2- | tr -d '"'
 # conf_kv FILE KEY
 conf_kv() { grep "^$2=" "$1" 2>/dev/null | head -n 1 | cut -d= -f2- | tr -d '"'; }
 
-has_cmd() { command -v "$1" >/dev/null 2>&1; }
+# has_cmd TOOL: search PATH by hand. Some busybox builds (Synology DSM/SRM) have no
+# "command" builtin at all, so the usual builtin lookup reports every tool as missing.
+has_cmd() {
+  hc_old=$IFS
+  IFS=:
+  for hc_dir in $PATH; do
+    if [ -x "$hc_dir/$1" ] && [ ! -d "$hc_dir/$1" ]; then IFS=$hc_old; return 0; fi
+  done
+  IFS=$hc_old
+  return 1
+}
 
 # unroot: print paths relative to the audited root (only differs in tests)
 unroot() {
@@ -724,6 +737,30 @@ if [ "$JSON" -eq 1 ]; then
   exit "$EXITC"
 fi
 
+# Plain ASCII, text mode only: --quiet and --json exit before this point.
+print_banner() {
+  b_c0=""; b_c1=""; b_c2=""; b_c3=""
+  # colour only on a terminal, never with NO_COLOR (same rule as the other audits)
+  if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
+    b_c0=$(printf '\033[0m'); b_c1=$(printf '\033[1;31m')
+    b_c2=$(printf '\033[1;33m'); b_c3=$(printf '\033[0;36m')
+  fi
+  cat <<BANNER
+${b_c1}
+  +-----------------------------------------------------------+
+  |  synology-audit   DSM / SRM security audit (read-only)  |
+  +-----------------------------------------------------------+
+${b_c0}${b_c3}
+   Synology advisories | exposure checks | web-shell and ransomware sweep
+   audit script ${VERSION}  by Quaerendir
+${b_c0}${b_c2}
+     [ NAS / router ] <-- ports, UPnP, admin, packages --> [ advisories ]
+     changes nothing, contacts no one
+${b_c0}
+BANNER
+}
+
+[ "$NO_BANNER" = 1 ] || print_banner
 echo "synology-audit $VERSION  (advisory data: $ADVISORY_SNAPSHOT)"
 echo "Device : $MODEL"
 echo "System : $SYSTEM_STR"

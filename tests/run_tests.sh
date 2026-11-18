@@ -455,6 +455,31 @@ else
   echo "note: unshare -r unavailable, skipping the root-ignores-hooks case"
 fi
 
+# ------------------------------------------------------------------ banner
+good_dsm banner_on; run
+expect_has 'by Quaerendir'
+good_dsm banner_off; run --no-banner
+expect_not 'Quaerendir'; expect_has 'Verdict: OK'
+good_dsm banner_quiet; run --quiet
+expect_not 'Quaerendir'
+good_dsm banner_json; run --json
+expect_not 'Quaerendir'
+good_dsm banner_ascii; run
+if printf '%s\n' "$OUT" | sed -n '1,/^synology-audit /p' | LC_ALL=C grep -q '[^ -~]'; then fail "banner must be plain ASCII"; else pass; fi
+if printf '%s\n' "$OUT" | sed -n '1,/^synology-audit /p' | awk '{ if (length($0) > 80) f = 1 } END { exit f }'; then pass; else fail "banner wider than 80 columns"; fi
+
+# ------------------------------------- shell without the command builtin
+# Synology busybox has no "command": has_cmd must not depend on it.
+printf '%s\n' "command() { echo 'sh: command: not found' >&2; return 127; }" '. "$AUDIT_UNDER_TEST"' > "$TMP/nocmd.sh"
+good_dsm no_command_builtin
+# a UPnP mapping makes the report depend on has_cmd iptables
+printf -- '-A NUPNPD -p tcp -m tcp --dport 8080 -j DNAT --to-destination 192.168.1.50:80\n' > "$D/_nat"
+run; want=$OUT
+printf '%s\n' "$want" | grep -q 'UPnP port mappings' || fail "no-command baseline lacks the UPnP warning"
+OUT=$(AUDIT_UNDER_TEST=$SCRIPT SYNOLOGY_AUDIT_TEST_ROOT="$D" SYNOLOGY_AUDIT_TEST_PATH="$MOCK_BIN" "$SH" "$TMP/nocmd.sh" 2>&1); RC=$?
+# the whole report must be identical: a lost tool only shows up as skipped checks, never as a changed verdict
+if [ -n "$want" ] && [ "$OUT" = "$want" ]; then pass; else fail "no command builtin: the report differs from a normal run"; fi
+
 echo
 echo "passed: $PASS   failed: $FAIL"
 [ "$FAIL" -eq 0 ]
