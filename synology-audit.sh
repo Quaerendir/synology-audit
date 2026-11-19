@@ -8,7 +8,7 @@
 #
 # Exit codes: 0 OK, 1 REVIEW, 2 VULNERABLE, 3 INDICATORS, 4 UNKNOWN.
 
-VERSION="1.2.0"
+VERSION="1.2.1"
 ADVISORY_SNAPSHOT="2026-11-01"
 
 # Pin PATH (same value DSM uses for cron) so a poisoned PATH cannot swap the
@@ -117,11 +117,20 @@ num_or_zero() {
   esac
 }
 
+# Text helpers built on sed and awk. Stripped busybox builds (ESXi, some
+# routers) have no tr, so this script never calls it.
+TAB=$(printf '\t')
+unquote() { sed 's/"//g'; }
+# one line per record in, all records on one line out (SEP between, none after)
+join_with() { awk -v sep="$1" 'NR > 1 { printf "%s", sep } { printf "%s", $0 }'; }
+# every record followed by SEP, also the last one (what tr '\n' SEP gave)
+end_with() { awk -v sep="$1" '{ printf "%s%s", $0, sep }'; }
+
 # kv KEY: value of KEY= in the VERSION file, quotes stripped.
-kv() { grep "^$1=" "$VERFILE" 2>/dev/null | head -n 1 | cut -d= -f2- | tr -d '"'; }
+kv() { grep "^$1=" "$VERFILE" 2>/dev/null | head -n 1 | cut -d= -f2- | unquote; }
 
 # conf_kv FILE KEY
-conf_kv() { grep "^$2=" "$1" 2>/dev/null | head -n 1 | cut -d= -f2- | tr -d '"'; }
+conf_kv() { grep "^$2=" "$1" 2>/dev/null | head -n 1 | cut -d= -f2- | unquote; }
 
 # has_cmd TOOL: search PATH by hand. Some busybox builds (Synology DSM/SRM) have no
 # "command" builtin at all, so the usual builtin lookup reports every tool as missing.
@@ -134,6 +143,20 @@ has_cmd() {
   IFS=$hc_old
   return 1
 }
+
+# Tools with no fallback. Without one of them the findings would be wrong, so
+# stop with no verdict (tr, id and wc are not needed: stripped busybox has none).
+for t in sed awk grep cat head cut sort basename dirname find; do
+  if ! has_cmd "$t"; then
+    if [ "$QUIET" -eq 1 ]; then
+      echo "UNKNOWN missing tool: $t"
+    elif [ "$JSON" -eq 1 ]; then
+      printf '{"tool":"synology-audit","version":"%s","verdict":"UNKNOWN","exit":4,"findings":[]}\n' "$VERSION"
+    fi
+    echo "synology-audit $VERSION: missing tool: $t, no verdict." >&2
+    exit 4
+  fi
+done
 
 # unroot: print paths relative to the audited root (only differs in tests)
 unroot() {
@@ -185,7 +208,7 @@ LISTEN_EXT=$(printf '%s\n' "$NS_OUT" | awk '$1 ~ /^tcp/ || $1 == "LISTEN" {
   a = $4; n = split(a, p, ":"); port = p[n]
   addr = substr(a, 1, length(a) - length(port) - 1)
   if (addr ~ /^127\./ || addr == "::1" || addr == "[::1]") next
-  print port }' | sort -un | tr '\n' ' ')
+  print port }' | sort -un | end_with ' ')
 LISTEN_EXT=${LISTEN_EXT% }
 
 listening() { # listening PORT
@@ -243,12 +266,12 @@ collect_packages() {
   for info in "$R"/var/packages/*/INFO; do
     [ -r "$info" ] || continue
     pid=$(basename "$(dirname "$info")")
-    pver=$(grep '^version=' "$info" 2>/dev/null | head -n 1 | cut -d= -f2- | tr -d '"')
+    pver=$(grep '^version=' "$info" 2>/dev/null | head -n 1 | cut -d= -f2- | unquote)
     printf '%s %s\n' "$pid" "$pver" >> "$PKGLIST"
     # install_dep_packages="Python2>=2.7:WebStation": colon-separated, optional version operator
-    pdeps=$(grep '^install_dep_packages=' "$info" 2>/dev/null | head -n 1 | cut -d= -f2- | tr -d '"\r')
+    pdeps=$(grep '^install_dep_packages=' "$info" 2>/dev/null | head -n 1 | cut -d= -f2- | awk '{ gsub(/["\r]/, ""); print }')
     if [ -n "$pdeps" ]; then
-      printf '%s\n' "$pdeps" | tr ':' '\n' | sed 's/[<>=].*//' | while IFS= read -r dep; do
+      printf '%s\n' "$pdeps" | awk '{ gsub(/:/, "\n"); print }' | sed 's/[<>=].*//' | while IFS= read -r dep; do
         if [ -n "$dep" ]; then printf '%s %s\n' "$pid" "$dep" >> "$DEPLIST"; fi
       done
     fi
@@ -294,7 +317,7 @@ php_fixed() {
 
 check_packages() {
   if [ -s "$PKGLIST" ]; then
-    npk=$(wc -l < "$PKGLIST" | tr -d ' ')
+    npk=$(awk 'END { print NR }' "$PKGLIST")
     add INFO PACKAGES "$npk packages installed: $(awk '{ printf "%s%s", sep, $1; sep = ", " }' "$PKGLIST")"
   else
     add INFO PACKAGES "no packages found under /var/packages"
@@ -397,7 +420,7 @@ check_ssh() {
     nkeys=$(grep -Ec '(ssh-(rsa|ed25519|dss)|ecdsa-sha2-|sk-)' "$ak" 2>/dev/null)
     fps=""
     if has_cmd ssh-keygen; then
-      fps=$(ssh-keygen -lf "$ak" 2>/dev/null | tr -d '\r' | awk '{ fp = $2; $1 = ""; $2 = ""; sub(/ \([A-Za-z0-9-]+\)$/, ""); sub(/^ +/, ""); printf "%s%s %s", sep, fp, $0; sep = "; " }')
+      fps=$(ssh-keygen -lf "$ak" 2>/dev/null | awk '{ gsub(/\r/, ""); fp = $2; $1 = ""; $2 = ""; sub(/ \([A-Za-z0-9-]+\)$/, ""); sub(/^ +/, ""); printf "%s%s %s", sep, fp, $0; sep = "; " }')
     fi
     add INFO SSH-KEYS "authorized_keys for $owner: ${nkeys:-0} key(s)${fps:+ ($fps)}"
   done
@@ -407,7 +430,7 @@ check_ssh() {
 check_shares() {
   smbconf="$R/etc/samba/smb.conf"
   if [ -r "$smbconf" ]; then
-    minp=$(grep -i '^[[:space:]]*min protocol' "$smbconf" 2>/dev/null | head -n 1 | cut -d= -f2 | tr -d ' \t' | tr 'a-z' 'A-Z')
+    minp=$(grep -i '^[[:space:]]*min protocol' "$smbconf" 2>/dev/null | head -n 1 | cut -d= -f2 | awk '{ gsub(/[ \t]/, ""); print toupper($0) }')
     case "$minp" in
       NT1|CORE|COREPLUS|LANMAN1|LANMAN2)
         add WARN SMB1 "SMB1 is allowed (min protocol=$minp): raise the minimum to SMB2 or higher (Control Panel > File Services > SMB > Advanced) after checking old scanners and printers" ;;
@@ -508,7 +531,7 @@ check_schedule() {
 check_processes() {
   bad=$(printf '%s\n' "$PS_OUT" | grep -Ei 'xmrig|minerd|cpuminer|ccminer|kinsing|kdevtmpfsi|/dev/shm/|/var/tmp/[^ ]*\.(sh|bin)' | grep -v 'grep' | head -n 5)
   if [ -n "$bad" ]; then
-    add CRIT IOC-PROCESS "suspicious process(es): $(printf '%s' "$bad" | tr '\n' ';' | cut -c1-300)"
+    add CRIT IOC-PROCESS "suspicious process(es): $(printf '%s' "$bad" | join_with ';' | cut -c1-300)"
   else
     add OK PROCESSES "no miner or temp-directory process found"
   fi
@@ -562,7 +585,7 @@ check_ioc() {
 $found"
   done
   if [ -n "$hits" ]; then
-    add CRIT IOC-RANSOM "file names typical of the Cerber/C3RB3R ransomware (heuristic, Synology publishes no IOC list):$(printf '%s' "$hits" | unroot | tr '\n' ' ' | cut -c1-400)"
+    add CRIT IOC-RANSOM "file names typical of the Cerber/C3RB3R ransomware (heuristic, Synology publishes no IOC list):$(printf '%s' "$hits" | unroot | join_with ' ' | cut -c1-400)"
   elif [ -n "$cutvols" ]; then
     add WARN IOC-RANSOM "the search for ransomware-style file names stopped at its 90 s limit on:$(printf '%s' "$cutvols" | unroot). Nothing was found in the part that was searched; the rest is unchecked"
   else
@@ -583,7 +606,7 @@ $found"
     if cut_short; then webcut=1; fi
     [ -n "$s" ] && shells="$shells
 $s"
-    n=$(timed 60 find "$wr" -type f \( -name '*.php' -o -name '*.phtml' -o -name '*.phar' \) -mtime "-$SINCE_DAYS" 2>/dev/null | wc -l | tr -d ' ')
+    n=$(timed 60 find "$wr" -type f \( -name '*.php' -o -name '*.phtml' -o -name '*.phar' \) -mtime "-$SINCE_DAYS" 2>/dev/null | awk 'END { print NR }')
     if cut_short; then webcut=1; fi
     recent=$((recent + ${n:-0}))
     u=$(timed 60 find "$wr" -type f \( -name '*.php' -o -name '*.phtml' -o -name '*.phar' \) 2>/dev/null |
@@ -593,14 +616,14 @@ $s"
 $u"
   done
   if [ -n "$shells" ]; then
-    add CRIT IOC-WEBSHELL "web-shell patterns in web roots:$(printf '%s' "$shells" | unroot | tr '\n' ' ' | cut -c1-400)"
+    add CRIT IOC-WEBSHELL "web-shell patterns in web roots:$(printf '%s' "$shells" | unroot | join_with ' ' | cut -c1-400)"
   elif [ "$webcut" -eq 1 ]; then
     add WARN IOC-WEBSHELL "the sweep of the web roots stopped at its 60 s limit. No web-shell pattern was found in the part that was searched; the rest is unchecked"
   else
     add OK IOC-WEBSHELL "no web-shell pattern in the web roots"
   fi
   if [ -n "$upl" ]; then
-    add WARN IOC-UPLOADS "PHP files inside uploads/cache/tmp directories:$(printf '%s' "$upl" | unroot | tr '\n' ' ' | cut -c1-400)"
+    add WARN IOC-UPLOADS "PHP files inside uploads/cache/tmp directories:$(printf '%s' "$upl" | unroot | join_with ' ' | cut -c1-400)"
   fi
   if [ "$recent" -gt 0 ]; then
     add INFO WEB-RECENT "$recent PHP file(s) changed in the web roots in the last $SINCE_DAYS days"
@@ -617,12 +640,12 @@ check_exposure() {
       /^-A INPUT_FIREWALL/ && /-j RETURN/ && !/ -s / && !geo {
         if (match($0, /--dports? [0-9,]+/)) {
           s = substr($0, RSTART, RLENGTH); sub(/--dports? /, "", s); print s } }' "$fwf" |
-      tr ',' '\n' | sort -un | tr '\n' ' ')
+      awk '{ gsub(/,/, "\n"); print }' | sort -un | end_with ' ')
     allowed=${allowed% }
     if [ -n "$allowed" ]; then
       add WARN FW-ALLOWLIST "router ports allowed from any country, ahead of the geo-block: $allowed. The geo-block does not protect these"
     fi
-    wl=$(grep '^-A INPUT_FIREWALL' "$fwf" | grep -- '-j RETURN' | grep -- ' -s ' | sed -n 's/.* -s \([0-9./]*\).*/\1/p' | sort -u | tr '\n' ' ')
+    wl=$(grep '^-A INPUT_FIREWALL' "$fwf" | grep -- '-j RETURN' | grep -- ' -s ' | sed -n 's/.* -s \([0-9./]*\).*/\1/p' | sort -u | end_with ' ')
     wl=${wl% }
     if [ -n "$wl" ]; then
       add INFO FW-WHITELIST "source address(es) allowed on every router port: $wl"
@@ -643,8 +666,8 @@ check_exposure() {
     nat=""
   fi
   if [ -n "$nat" ]; then
-    upnp_map=$(printf '%s\n' "$nat" | grep -E '^-A NUPNPD .*DNAT' | sed -n 's/.*--dport \([0-9]*\).*--to-destination \(.*\)/\1->\2/p' | tr '\n' ' ')
-    static_map=$(printf '%s\n' "$nat" | grep -E '^-A PORT_FORWARD_RULE .*DNAT' | sed -n 's/.*-p \([a-z]*\).*--dport \([0-9]*\).*--to-destination \(.*\)/\1 \2->\3/p' | tr '\n' ';')
+    upnp_map=$(printf '%s\n' "$nat" | grep -E '^-A NUPNPD .*DNAT' | sed -n 's/.*--dport \([0-9]*\).*--to-destination \(.*\)/\1->\2/p' | end_with ' ')
+    static_map=$(printf '%s\n' "$nat" | grep -E '^-A PORT_FORWARD_RULE .*DNAT' | sed -n 's/.*-p \([a-z]*\).*--dport \([0-9]*\).*--to-destination \(.*\)/\1 \2->\3/p' | end_with ';')
     [ -n "$upnp_map" ] && add WARN UPNP-MAPPINGS "UPnP port mappings to the LAN: ${upnp_map% }"
     [ -n "$static_map" ] && add INFO FORWARDS "manual port forwards: ${static_map%;}"
   elif [ "$OS" = "SRM" ]; then
@@ -713,7 +736,7 @@ else
   VERDICT=OK; EXITC=0
 fi
 
-json_esc() { printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' | tr '\t' ' '; }
+json_esc() { printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e "s/$TAB/ /g"; }
 
 if [ "$QUIET" -eq 1 ]; then
   echo "$VERDICT $SYSTEM_STR $MODEL: $n_crit critical, $n_warn warnings"

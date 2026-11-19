@@ -480,6 +480,157 @@ OUT=$(AUDIT_UNDER_TEST=$SCRIPT SYNOLOGY_AUDIT_TEST_ROOT="$D" SYNOLOGY_AUDIT_TEST
 # the whole report must be identical: a lost tool only shows up as skipped checks, never as a changed verdict
 if [ -n "$want" ] && [ "$OUT" = "$want" ]; then pass; else fail "no command builtin: the report differs from a normal run"; fi
 
+# ------------------------------- busybox without tr, id and wc (ESXi, routers)
+# A directory that holds only the tools the script needs, and nothing else.
+mkfarm() { # mkfarm DIR TOOL...
+  mkdir -p "$1"; fm_dir=$1; shift
+  for fm_t in "$@"; do
+    fm_p=$(command -v "$fm_t") && ln -sf "$fm_p" "$fm_dir/$fm_t"
+  done
+}
+FARM_TOOLS="sed awk grep cat head cut sort basename dirname find mktemp rm date ssh-keygen"
+# shellcheck disable=SC2086  # a word list on purpose
+mkfarm "$TMP/farm" $FARM_TOOLS
+# shellcheck disable=SC2086
+mkfarm "$TMP/farm_id" $FARM_TOOLS id
+for gone in tr id wc; do
+  if [ -e "$TMP/farm/$gone" ]; then fail "the tool farm must not hold $gone"; else pass; fi
+done
+# Copies of the script that run on the farm only. A copy is needed because the
+# script pins its own PATH; the second copy keeps the id lookup as it is.
+farm_script() { # farm_script OUT FARMDIR [fixed-uid]
+  if [ -n "${3:-}" ]; then fs_uid='s|^AUDIT_UID=.*|AUDIT_UID=1000|'; else fs_uid='s|^$||'; fi
+  sed -e "s|^PATH=.*|PATH=\"$2\"|" -e "$fs_uid" "$SCRIPT" > "$1"
+  if grep -q "^PATH=\"$2\"" "$1" && { [ -z "${3:-}" ] || grep -q '^AUDIT_UID=1000$' "$1"; }; then pass; else fail "farm copy was not made"; fi
+}
+farm_script "$TMP/syn_farm.sh" "$TMP/farm" fixed
+farm_script "$TMP/syn_farm_realid.sh" "$TMP/farm"
+farm_script "$TMP/syn_farm_id.sh" "$TMP/farm_id"
+
+run_with() { # run_with SCRIPTFILE [args...] -> OUT, RC
+  rw_s=$1; shift
+  OUT=$(SYNOLOGY_AUDIT_TEST_ROOT="$D" SYNOLOGY_AUDIT_TEST_PATH="$MOCK_BIN" "$SH" "$rw_s" "$@" 2>&1)
+  RC=$?
+}
+
+# a DSM that touches every place that used to call tr
+KEYPUB=""
+if command -v ssh-keygen >/dev/null 2>&1 && ssh-keygen -q -t ed25519 -N '' -C bob@host -f "$TMP/bobkey" >/dev/null 2>&1; then
+  KEYPUB="$TMP/bobkey.pub"
+fi
+rich_dsm() { # rich_dsm NAME
+  new_root "$1"
+  TABCH=$(printf '\t')
+  set_system 7.2.1 69057 11 DSM "synology_r1000_1522+" "DS15${TABCH}22+"
+  mkdir -p "$D/etc/samba" "$D/etc/ssh/keys/bob" "$D/volume1/Docs" "$D/volume1/web/wp/wp-content/uploads" "$D/volume1/web/site"
+  printf 'ssh_port="2222"\n' > "$D/etc/synoinfo.conf"
+  printf 'administrators:x:101:Marek\n' > "$D/etc/group"
+  printf '[global]\n\tMin Protocol =\t nt1 \t\n' > "$D/etc/samba/smb.conf"
+  add_pkg PHP8.4 8.4.26-0050; add_pkg WebStation 4.0.0-0100; add_pkg Python2 2.7.18-1004
+  dep_pkg OldTool 1.0.0-1 'WebStation>=3.0:python2'
+  mkdir -p "$D/var/packages/CrTool"; printf 'version="1.0-1"\r\ninstall_dep_packages="Python2"\r\n' > "$D/var/packages/CrTool/INFO"
+  if [ -n "$KEYPUB" ]; then
+    { sed 's/$/\r/' "$KEYPUB"; printf '\r\n'; } > "$D/etc/ssh/keys/bob/authorized_keys"
+  fi
+  printf 'USER PID COMMAND\nroot 1 /sbin/init\nroot 9912 sshd: /usr/bin/sshd -D [listener]\nnobody 999 /tmp/xmrig --donate-level 1\nnobody 1000 /dev/shm/x kdevtmpfsi\n' > "$D/_ps"
+  printf 'tcp 0 0 0.0.0.0:443 0.0.0.0:* LISTEN\ntcp 0 0 0.0.0.0:22 0.0.0.0:* LISTEN\ntcp 0 0 0.0.0.0:5001 0.0.0.0:* LISTEN\ntcp 0 0 0.0.0.0:80 0.0.0.0:* LISTEN\ntcp 0 0 127.0.0.1:5432 0.0.0.0:* LISTEN\n' > "$D/_netstat"
+  printf -- '%s\n' '-A INPUT_FIREWALL -p tcp -m multiport --dports 22,80,443 -j RETURN' \
+    '-A INPUT_FIREWALL -p tcp --dport 8443 -j RETURN' '-A INPUT_FIREWALL -p udp -m multiport --dports 443,80 -j RETURN' '-A INPUT_FIREWALL -s 203.0.113.7/32 -j RETURN' \
+    '-A INPUT_FIREWALL -s 198.51.100.0/24 -j RETURN' '-A INPUT_FIREWALL -p tcp -m geoip --source-country CN -j DROP' \
+    > "$D/tmp/firewall_iptables_rules_v4"
+  printf -- '%s\n' '-A NUPNPD -p tcp -m tcp --dport 8080 -j DNAT --to-destination 192.168.1.50:80' \
+    '-A NUPNPD -p udp -m udp --dport 9090 -j DNAT --to-destination 192.168.1.51:90' \
+    '-A PORT_FORWARD_RULE -p tcp -m tcp --dport 2200 -j DNAT --to-destination 192.168.1.9:22' \
+    '-A PORT_FORWARD_RULE -p udp -m udp --dport 5000 -j DNAT --to-destination 192.168.1.9:5000' > "$D/_nat"
+  : > "$D/volume1/Docs/a.c3rb3r"; : > "$D/volume1/Docs/b.cerber2"
+  printf '<?php %s%s%s ?>\n' "$p1" "$p2" "$p3" > "$D/volume1/web/site/a.php"
+  printf '<?php %s%s%s ?>\n' "$p1" "$p2" "$p3" > "$D/volume1/web/site/b.php"
+  echo '<?php echo 1;' > "$D/volume1/web/wp/wp-content/uploads/x.php"
+  echo '<?php echo 2;' > "$D/volume1/web/wp/wp-content/uploads/y.php"
+}
+# every report line this fixture must give, on any toolset
+expect_rich() {
+  expect_has 'LISTENING: ports listening on non-loopback addresses: 22 80 443 5001$'
+  expect_has 'PACKAGES: 5 packages installed: CrTool, OldTool, PHP8.4, Python2, WebStation$'
+  expect_has 'while CrTool, OldTool depend\(s\) on it'
+  expect_has 'SMB1: SMB1 is allowed \(min protocol=NT1\)'
+  expect_has 'suspicious process\(es\): nobody 999 /tmp/xmrig --donate-level 1;nobody 1000 /dev/shm/x kdevtmpfsi$'
+  expect_has 'IOC-RANSOM: [^:]*\): /volume1/Docs/[ab]\.c[a-z0-9]+ /volume1/Docs/[ab]\.c[a-z0-9]+$'
+  expect_has 'IOC-WEBSHELL: [^:]*: /volume1/web/site/[ab]\.php /volume1/web/site/[ab]\.php$'
+  expect_has 'IOC-UPLOADS: [^:]*: /volume1/web/wp/wp-content/uploads/[xy]\.php /volume1/web/wp/wp-content/uploads/[xy]\.php$'
+  expect_has 'WEB-RECENT: 4 PHP'
+  expect_has 'FW-ALLOWLIST: .*ahead of the geo-block: 22 80 443 8443\. '
+  expect_has 'FW-WHITELIST: .*: 198\.51\.100\.0/24 203\.0\.113\.7/32$'
+  expect_has 'UPNP-MAPPINGS: UPnP port mappings to the LAN: 8080->192\.168\.1\.50:80 9090->192\.168\.1\.51:90$'
+  expect_has 'FORWARDS: manual port forwards: tcp 2200->192\.168\.1\.9:22;udp 5000->192\.168\.1\.9:5000$'
+  if [ -n "$KEYPUB" ]; then
+    expect_has 'SSH-KEYS: authorized_keys for bob: 1 key\(s\) \(SHA256:[A-Za-z0-9+/]+ bob@host\)$'
+  fi
+  expect_not 'not found'
+}
+# text report: every line right on the normal toolset and on the farm
+rich_dsm rich_normal; run --no-banner; want_text=$OUT
+expect_rich
+rich_dsm rich_farm; run_with "$TMP/syn_farm.sh" --no-banner
+expect_rich
+# same fixture, same layout: the farm report must equal the normal one
+if [ -n "$want_text" ] && [ "$OUT" = "$want_text" ]; then pass; else fail "on a tool farm without tr, id and wc the text report differs from a normal run"; fi
+# JSON report: identical too
+rich_dsm rich_normal_json; run --json; want_json=$OUT
+rich_dsm rich_farm_json; run_with "$TMP/syn_farm.sh" --json
+if [ -n "$want_json" ] && [ "$OUT" = "$want_json" ]; then pass; else fail "on a tool farm without tr, id and wc the JSON report differs from a normal run"; fi
+rich_dsm rich_json_tab; run_with "$TMP/syn_farm.sh" --json
+expect_has '"model":"DS15 22\+"'
+if printf '%s' "$OUT" | grep -q "$TABCH"; then fail "a tab reached the JSON output"; else pass; fi
+expect_rc 3
+
+# the same farm, good DSM: positive control for the farm itself
+good_dsm farm_clean; run_with "$TMP/syn_farm.sh"
+expect_rc 0; expect_has 'Verdict: OK'; expect_not 'not found'
+
+# no id: the hooks must stay off, so the farm audits the real host (not a
+# Synology: UNKNOWN), never the fixture. The control with id present reads it.
+good_dsm farm_noid_hooks_off
+if [ ! -r /etc.defaults/VERSION ] && [ ! -r /etc/VERSION ]; then
+  run_with "$TMP/syn_farm_realid.sh"
+  expect_rc 4; expect_not 'DS1522'; expect_not 'Verdict'
+  run_with "$TMP/syn_farm_id.sh"
+  expect_rc 0; expect_has 'DS1522'
+else
+  echo "note: this host has a /etc/VERSION file, skipping the no-id hooks case"
+fi
+
+# Some ssh-keygen builds keep the CR of a CRLF key file in their output; the
+# fingerprint line must still come out clean (it used to need tr -d '\r').
+good_dsm keygen_cr; mkdir -p "$D/etc/ssh/keys/bob" "$D/_kg"
+printf 'ssh-ed25519 AAAA bob@host\r\n' > "$D/etc/ssh/keys/bob/authorized_keys"
+printf '#!/bin/sh\nprintf "256 SHA256:abc123 bob@host (ED25519)\\r\\n"\n' > "$D/_kg/ssh-keygen"; chmod +x "$D/_kg/ssh-keygen"
+OUT=$(SYNOLOGY_AUDIT_TEST_ROOT="$D" SYNOLOGY_AUDIT_TEST_PATH="$D/_kg:$MOCK_BIN" "$SH" "$TMP/syn_farm.sh" 2>&1); RC=$?
+expect_has 'SSH-KEYS: authorized_keys for bob: 1 key\(s\) \(SHA256:abc123 bob@host\)$'
+OUT=$(SYNOLOGY_AUDIT_TEST_ROOT="$D" SYNOLOGY_AUDIT_TEST_PATH="$D/_kg:$MOCK_BIN" "$SH" "$SCRIPT" 2>&1); RC=$?
+expect_has 'SSH-KEYS: authorized_keys for bob: 1 key\(s\) \(SHA256:abc123 bob@host\)$'
+
+# a tool with no fallback missing: no verdict, in every output mode
+good_dsm farm_missing_tool
+for need in sed awk grep cat head cut sort basename dirname find; do
+  rm -rf "$TMP/farm_without"
+  rest=$(printf '%s ' $FARM_TOOLS | sed "s/ $need / /; s/^$need //")
+  # shellcheck disable=SC2086  # a word list on purpose
+  mkfarm "$TMP/farm_without" $rest
+  if [ -e "$TMP/farm_without/$need" ]; then fail "the farm still holds $need"; else pass; fi
+  farm_script "$TMP/syn_farm_without.sh" "$TMP/farm_without" fixed
+  for mode in "" --quiet --json; do
+    CASE="farm_missing_${need}${mode:+_${mode#--}}"
+    # shellcheck disable=SC2086  # $mode is empty or one option
+    run_with "$TMP/syn_farm_without.sh" $mode
+    expect_rc 4; expect_has "missing tool: $need"; expect_not 'Verdict: OK'; expect_not '"verdict":"OK"'
+    case "$mode" in
+      --quiet) expect_has "^UNKNOWN missing tool: $need" ;;
+      --json)  expect_has '"verdict":"UNKNOWN"' ;;
+    esac
+  done
+done
+
 echo
 echo "passed: $PASS   failed: $FAIL"
 [ "$FAIL" -eq 0 ]

@@ -2,6 +2,25 @@
 
 All notable changes to `synology-audit` are documented here.
 
+## [1.2.1] — 2026-11-19
+
+- Runs on a stripped busybox with no `tr`, `id` or `wc` (ESXi, some routers). The 20
+  `tr` calls are replaced by `awk` and `sed` (quote and CR stripping, list joining,
+  upper-casing, port lists, JSON tab handling), and the package and PHP file counts
+  use `awk` instead of `wc`. Reports are unchanged: the old and the new script gave
+  byte-identical text, JSON and `--quiet` output on a fixture that touches every
+  replaced call, and the new script gave the same report on an ESXi 7.0.3 busybox.
+- A tool the audit cannot do without (`sed awk grep cat head cut sort basename dirname
+  find`) that is missing now ends the run with no verdict (exit 4, in text, `--quiet`
+  and `--json` form) instead of producing findings from broken pipelines.
+- When `id` is missing the test hooks stay off (this already held; it is now tested on a
+  tool set without `id`).
+- 416 regression checks (new: a tool farm without `tr`, `id` and `wc`, a fixture for
+  every replaced call compared between the farm and a normal run, each required tool
+  missing in turn, a `ssh-keygen` that keeps the CR of a CRLF key file). The new code
+  is mutation-tested: 35 mutants, 33 killed, 2 equivalent (callers strip the trailing
+  separator `end_with` leaves).
+
 ## [1.2.0] — 2026-11-18
 
 - ASCII banner in the text report, in the style of the other audits (box, colour

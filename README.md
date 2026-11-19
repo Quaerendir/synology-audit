@@ -4,7 +4,7 @@
 ![Platform](https://img.shields.io/badge/Synology-DSM%207%20%7C%20DSM%206.2%20%7C%20SRM-blue?style=flat-square)
 ![Mode](https://img.shields.io/badge/mode-read--only-success?style=flat-square)
 ![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)
-![Version](https://img.shields.io/badge/version-1.2.0-informational?style=flat-square)
+![Version](https://img.shields.io/badge/version-1.2.1-informational?style=flat-square)
 [![CI](https://github.com/Quaerendir/synology-audit/actions/workflows/shellcheck.yml/badge.svg)](https://github.com/Quaerendir/synology-audit/actions/workflows/shellcheck.yml)
 
 Read-only security audit for **Synology DSM and SRM** devices. One POSIX `sh` script that runs on the NAS or router itself (or over SSH), checks the installed system against the current Synology advisories, and looks for signs of compromise and risky exposure. It changes nothing and contacts no one.
@@ -107,7 +107,7 @@ Add options after the script name (`sudo sh /tmp/synology-audit.sh --json`). If 
 ## Tests
 
 ```sh
-bash tests/run_tests.sh      # 205 checks, each against a fake DSM/SRM tree
+bash tests/run_tests.sh      # 416 checks, each against a fake DSM/SRM tree
 bash tests/make_examples.sh  # regenerate examples/ from the fixtures
 ```
 
